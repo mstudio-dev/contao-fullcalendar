@@ -14,62 +14,60 @@ namespace ContaoFullcalendar;
  * @filesource
  */
 
+namespace ContaoFullcalendar;
+
+use Contao\CalendarEventsModel;
+use Contao\CalendarModel;
+
 class InfoObject
 {
-    /**
-     * Exception
-     * @var \Exception
-     */
-    private $objException = null;
-    private $strType = 'TL_INFO';
-    private $strTitle;
-    private $intNew;
-    private $intUpdated;
-    private $intDeleted;
+    private ?\Exception $exception = null;
+    private string $type = 'TL_INFO';
+    private int $new = 0;
+    private int $updated = 0;
+    private int $deleted = 0;
 
-    public function __construct($objCal)
+    public function __construct(private readonly CalendarModel $calendar)
     {
-        $this->strTitle = $objCal->title;
-        $this->intNew = 0;
-        $this->intUpdated = 0;
-        $this->intDeleted = 0;
     }
 
-    public function add($objEvent)
+    public function add(CalendarEventsModel $event): void
     {
-        if ($objEvent->fullcal_flagNew) {
-            $this->intNew++;
+        if ($event->fullcal_flagNew) {
+            $this->new++;
         } else {
-            $this->intUpdated++;
+            $this->updated++;
         }
     }
 
-    public function setDeleted($intDel)
+    public function setDeleted(int $deletedCount): void
     {
-        $this->intDeleted = $intDel;
+        $this->deleted = $deletedCount;
     }
 
-    public function getMessage()
+    public function getMessage(): string
     {
-        if ($this->objException !== null) {
-            return $this->objException->getMessage();
+        if ($this->exception !== null) {
+            return $this->exception->getMessage();
         }
 
         return sprintf(
             'Kalender <strong>%s</strong>: %s Events eingefügt, %s Events aktualisiert, %s Events gelöscht',
-            $this->strTitle, $this->intNew, $this->intUpdated, $this->intDeleted
+            $this->calendar->title,
+            $this->new,
+            $this->updated,
+            $this->deleted
         );
     }
 
-    public function setException(\Exception $e)
+    public function setException(\Exception $e): void
     {
-        $this->strType = 'TL_ERROR';
-        $this->objException = $e;
+        $this->type = 'TL_ERROR';
+        $this->exception = $e;
     }
 
-    public function getType()
+    public function getType(): string
     {
-        return $this->strType;
+        return $this->type;
     }
-
 }

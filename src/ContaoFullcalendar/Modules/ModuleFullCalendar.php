@@ -14,161 +14,152 @@ namespace ContaoFullcalendar\Modules;
  * @filesource
  */
 
+use Contao\CoreBundle\Controller\FrontendModule\AbstractFrontendModuleController;
+use Contao\CoreBundle\DependencyInjection\Attribute\AsFrontendModule;
+use Contao\ModuleModel;
+use Contao\Template;
+use Contao\CalendarModel;
+use Contao\PageModel;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use ContaoFullcalendar\EventMapper;
 
-/**
- * Class ModuleFullCalendar
- *
- * Front end module "fullcalendar".
- * @copyright Martin Kozianka 2014-2019 <http://kozianka.de/>
- * @author    Martin Kozianka <http://kozianka.de/>
- * @package    contao-fullcalendar
- */
-class ModuleFullCalendar extends \Events
+#[AsFrontendModule(
+    category: 'events',
+    template: 'mod_fullcalendar'
+)]
+class ModuleFullCalendar extends AbstractFrontendModuleController
 {
-    /**
-     * Template
-     * @var string
-     */
-    protected $strTemplate = 'mod_fullcalendar';
-
-    public function generate()
+    protected function getResponse(Template $template, ModuleModel $model, Request $request): Response
     {
-        if (TL_MODE === 'BE') {
-            $objTemplate = new \BackendTemplate('be_wildcard');
-            $objTemplate->wildcard = '### ' . utf8_strtoupper($GLOBALS['TL_LANG']['FMD']['fullcalendar'][0]) . ' ###';
-            $objTemplate->title = $this->headline;
-            $objTemplate->id = $this->id;
-            $objTemplate->link = $this->name;
-            $objTemplate->href = 'contao/main.php?do=themes&amp;table=tl_module&amp;act=edit&amp;id=' . $this->id;
-            return $objTemplate->parse();
-        }
-        return parent::generate();
-    }
-
-    protected function compile()
-    {
-        global $objPage;
+        $page = $this->get('contao.framework')->getAdapter(PageModel::class)->findByPk($GLOBALS['objPage']->id);
 
         $this->fullcal_viewButtons = ['month', 'agendaWeek', 'agendaDay'];
 
         $fullcalOptions = new \stdClass();
-        $fullcalOptions->locale = $objPage->language;
-        $fullcalOptions->firstDay = $this->cal_startDay;
-        $fullcalOptions->aspectRatio = $this->fullcal_aspectRatio;
-        $fullcalOptions->fixedWeekCount = ("1" === $this->fullcal_fixedWeekCount);
-        $fullcalOptions->weekNumbers = ("1" === $this->fullcal_weekNumbers);
+        $fullcalOptions->locale = $page->language;
+        $fullcalOptions->firstDay = $model->cal_startDay;
+        $fullcalOptions->aspectRatio = $model->fullcal_aspectRatio;
+        $fullcalOptions->fixedWeekCount = ("1" === $model->fullcal_fixedWeekCount);
+        $fullcalOptions->weekNumbers = ("1" === $model->fullcal_weekNumbers);
 
-        if ($this->fullcal_contentHeight != "") {
-            $fullcalOptions->contentHeight = $this->fullcal_contentHeight;
+        if ($model->fullcal_contentHeight !== "") {
+            $fullcalOptions->contentHeight = $model->fullcal_contentHeight;
         }
 
-        if ("1" === $this->fullcal_isRTL) {
+        if ("1" === $model->fullcal_isRTL) {
             $fullcalOptions->direction = "rtl";
         }
 
         $fullcalOptions->headerToolbar = new \stdClass();
-        $fullcalOptions->headerToolbar->start = $this->fullcal_headerToolbar_start;
-        $fullcalOptions->headerToolbar->center = $this->fullcal_headerToolbar_center;
-        $fullcalOptions->headerToolbar->end = $this->fullcal_headerToolbar_end;
+        $fullcalOptions->headerToolbar->start = $model->fullcal_headerToolbar_start;
+        $fullcalOptions->headerToolbar->center = $model->fullcal_headerToolbar_center;
+        $fullcalOptions->headerToolbar->end = $model->fullcal_headerToolbar_end;
 
-        $arrCalendarIds = array_map('intval', deserialize($this->cal_calendar));
+        $arrCalendarIds = array_map('intval', deserialize($model->cal_calendar));
         $arrCalendar = [];
-        $collectionCal = \CalendarModel::findMultipleByIds($arrCalendarIds);
+        $collectionCal = CalendarModel::findMultipleByIds($arrCalendarIds);
 
-        foreach ($collectionCal as $objCal) {
-            $arrCalendar[$objCal->fullcal_alias] = (object) [
-                'id' => $objCal->id,
-                'title' => $objCal->title,
-                'alias' => $objCal->fullcal_alias,
-                'color' => deserialize($objCal->fullcal_color),
-            ];
-
+        if ($collectionCal !== null) {
+            foreach ($collectionCal as $objCal) {
+                $arrCalendar[$objCal->fullcal_alias] = (object) [
+                    'id' => $objCal->id,
+                    'title' => $objCal->title,
+                    'alias' => $objCal->fullcal_alias,
+                    'color' => deserialize($objCal->fullcal_color),
+                ];
+            }
         }
 
-        $GLOBALS["TL_JAVASCRIPT"][] = "system/modules/fullcalendar/assets/fullcalendar/main.min.js|static";
-        $GLOBALS["TL_JAVASCRIPT"][] = "system/modules/fullcalendar/assets/fullcalendar/locales-all.min.js|static";
-        $GLOBALS['TL_CSS'][] = "system/modules/fullcalendar/assets/fullcalendar/main.min.css|static";
+        $template->assets->addJavaScript('bundles/contaofullcalendar/fullcalendar/main.min.js');
+        $template->assets->addJavaScript('bundles/contaofullcalendar/fullcalendar/locales-all.min.js');
+        $template->assets->addCss('bundles/contaofullcalendar/fullcalendar/main.min.css');
+        $template->assets->addJavaScript('bundles/contaofullcalendar/fullcal.js');
 
-        $GLOBALS["TL_JAVASCRIPT"][] = "system/modules/fullcalendar/assets/fullcal.js|static";
+        if (isset($model->fullcal_tooltip_options) && !ctype_space($model->fullcal_tooltip_options)) {
+            $template->fullcalTooltipOptions = trim($model->fullcal_tooltip_options);
 
-        if (isset($this->fullcal_tooltip_options) && !ctype_space($this->fullcal_tooltip_options)) {
-            $this->Template->fullcalTooltipOptions = trim($this->fullcal_tooltip_options);
+            $template->assets->addJavaScript('bundles/contaofullcalendar/popper/popper.min.js');
+            $template->assets->addJavaScript('bundles/contaofullcalendar/tippy/tippy-bundle.umd.min.js');
 
-            $GLOBALS["TL_JAVASCRIPT"][] = "system/modules/fullcalendar/assets/popper/popper.min.js|static";
-            $GLOBALS["TL_JAVASCRIPT"][] = "system/modules/fullcalendar/assets/tippy/tippy-bundle.umd.min.js|static";
-
-            $GLOBALS['TL_CSS'][] = "system/modules/fullcalendar/assets/tippy/themes/light-border.css|static";
-            $GLOBALS['TL_CSS'][] = "system/modules/fullcalendar/assets/tippy/themes/light.css|static";
-            $GLOBALS['TL_CSS'][] = "system/modules/fullcalendar/assets/tippy/themes/material.css|static";
-            $GLOBALS['TL_CSS'][] = "system/modules/fullcalendar/assets/tippy/themes/translucent.css|static";
-
+            $template->assets->addCss('bundles/contaofullcalendar/tippy/themes/light-border.css');
+            $template->assets->addCss('bundles/contaofullcalendar/tippy/themes/light.css');
+            $template->assets->addCss('bundles/contaofullcalendar/tippy/themes/material.css');
+            $template->assets->addCss('bundles/contaofullcalendar/tippy/themes/translucent.css');
         }
 
-        if (isset($this->fullcal_options_additional) && !ctype_space($this->fullcal_options_additional)) {
-            $this->Template->fullcalOptionsAdditional = trim($this->fullcal_options_additional);
+        if (isset($model->fullcal_options_additional) && !ctype_space($model->fullcal_options_additional)) {
+            $template->fullcalOptionsAdditional = trim($model->fullcal_options_additional);
         }
 
-        if ($this->fullcal_wrapTitleMonth === "1") {
-            $this->Template->appendStyle = join("\n", [
+        if ($model->fullcal_wrapTitleMonth === "1") {
+            $template->appendStyle = join("\n", [
                 ".fc-daygrid-event { display:block; white-space:normal; }",
                 ".fc-daygrid-event > div { display:inline-block; }",
             ]);
         }
 
-        $this->Template->showMenu = true;
-        $this->Template->jsonEventSources = json_encode($this->getEventSources($arrCalendarIds), JSON_NUMERIC_CHECK);
-        $this->Template->fullcalOptions = json_encode($fullcalOptions, JSON_NUMERIC_CHECK);
-        $this->Template->arrCalendar = $arrCalendar;
+        $template->showMenu = true;
+        $template->jsonEventSources = json_encode($this->getEventSources($arrCalendarIds, $model->fullcal_range), JSON_NUMERIC_CHECK);
+        $template->fullcalOptions = json_encode($fullcalOptions, JSON_NUMERIC_CHECK);
+        $template->arrCalendar = $arrCalendar;
+
+        return $template->getResponse();
     }
 
-    private function getEventSources(array $arrCalendarIds)
+    private function getEventSources(array $arrCalendarIds, string $range)
     {
         $arrCalendar = [];
-        $collectionCal = \CalendarModel::findMultipleByIds($arrCalendarIds);
-        foreach ($collectionCal as $calModel) {
-            $arrColor = deserialize($calModel->fullcal_color);
-            if (is_array($arrColor) && strlen($arrColor[0]) > 0) {
-                $calModel->fullcal_hexColor = '#' . $arrColor[0];
+        $collectionCal = CalendarModel::findMultipleByIds($arrCalendarIds);
+        if ($collectionCal !== null) {
+            foreach ($collectionCal as $calModel) {
+                $arrColor = deserialize($calModel->fullcal_color);
+                if (is_array($arrColor) && strlen($arrColor[0]) > 0) {
+                    $calModel->fullcal_hexColor = '#' . $arrColor[0];
+                }
+                $arrCalendar[$calModel->id] = $calModel;
             }
-            $arrCalendar[$calModel->id] = $calModel;
         }
 
         // Time range
         $jsonEventSources = new \stdClass();
-        $tsStart = strtotime('-' . str_replace("_", " ", $this->fullcal_range), time());
-        $tsEnd = strtotime('+' . str_replace("_", " ", $this->fullcal_range), time());
-        $events = $this->getAllEvents($arrCalendarIds, $tsStart, $tsEnd);
-        ksort($events);
+        $tsStart = strtotime('-' . str_replace("_", " ", $range), time());
+        $tsEnd = strtotime('+' . str_replace("_", " ", $range), time());
 
-        foreach ($events as $days) {
-            foreach ($days as $keyDay => $day) {
-                // $keyDay Ein Tag mit eventuell mehreren Events
-                foreach ($day as $event) {
-                    $calModel = $arrCalendar[$event['pid']];
-                    $calAlias = $calModel->fullcal_alias;
+        $events = \CalendarEventsModel::findPublishedByPids($arrCalendarIds, $tsStart, $tsEnd);
 
-                    if (!isset($jsonEventSources->$calAlias)) {
-                        $eventSource = new \stdClass();
-                        $eventSource->id = $calAlias;
-                        $eventSource->hexColor = isset($calModel->fullcal_hexColor) ? $calModel->fullcal_hexColor : null;
-                        $eventSource->events = [];
-                        $jsonEventSources->$calAlias = $eventSource;
-                    } else {
-                        $eventSource = $jsonEventSources->$calAlias;
-                    }
-
-                    $newEvent = EventMapper::convert($event);
-
-                    $newEvent->calendarAlias = $calAlias;
-                    $newEvent->backgroundColor = isset($calModel->fullcal_hexColor) ? $calModel->fullcal_hexColor : null;
-                    $newEvent->className .= " " . $calAlias;
-
-                    $eventSource->events[] = $newEvent;
-                }
-            }
+        if ($events === null) {
+            return $jsonEventSources;
         }
+
+        $eventList = [];
+        while($events->next()) {
+            $eventList[] = $events->row();
+        }
+
+        foreach ($eventList as $event) {
+            $calModel = $arrCalendar[$event['pid']];
+            $calAlias = $calModel->fullcal_alias;
+
+            if (!isset($jsonEventSources->$calAlias)) {
+                $eventSource = new \stdClass();
+                $eventSource->id = $calAlias;
+                $eventSource->hexColor = isset($calModel->fullcal_hexColor) ? $calModel->fullcal_hexColor : null;
+                $eventSource->events = [];
+                $jsonEventSources->$calAlias = $eventSource;
+            } else {
+                $eventSource = $jsonEventSources->$calAlias;
+            }
+
+            $newEvent = EventMapper::convert($event);
+
+            $newEvent->calendarAlias = $calAlias;
+            $newEvent->backgroundColor = isset($calModel->fullcal_hexColor) ? $calModel->fullcal_hexColor : null;
+            $newEvent->className .= " " . $calAlias;
+
+            $eventSource->events[] = $newEvent;
+        }
+
         return $jsonEventSources;
     }
-
 }

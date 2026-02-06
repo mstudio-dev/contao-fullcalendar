@@ -1,0 +1,25 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        public: false
+
+    ContaoFullcalendar\:
+        resource: ../../../*
+        exclude: ../../../{DependencyInjection,Resources}
+
+    ContaoFullcalendar\Controller\:
+        resource: ../../Controller
+        public: true
+
+    ContaoFullcalendar\EventListener\Dca\CalendarListener:
+        tags:
+            - { name: contao.dca_loader, table: tl_calendar }
+
+    ContaoFullcalendar\EventListener\Dca\CalendarEventsListener:
+        tags:
+            - { name: contao.dca_loader, table: tl_calendar_events }
+
+    ContaoFullcalendar\EventListener\Dca\ModuleListener:
+        tags:
+            - { name: contao.dca_loader, table: tl_module }

@@ -2,107 +2,98 @@
 
 namespace ContaoFullcalendar;
 
-/**
- * class EventMapper
- *
- * Contao Open Source CMS
- * Copyright (C) 2005-2019 Leo Feyer
- *
- *
- * PHP version 5
- * @copyright Martin Kozianka 2014-2019 <http://kozianka.de/>
- * @author    Martin Kozianka <http://kozianka.de/>
- * @package    contao-fullcalendar
- * @license    LGPL
- * @filesource
- */
-
 use Contao\CalendarEventsModel;
-use Contao\File;
+use Contao\CoreBundle\Framework\ContaoFramework;
+use Contao\Dbafs;
 use Contao\StringUtil;
-use Sabre\VObject\Component\VCalendar;
+use Contao\Template;
+use ContaoFullcalendar\Dto\FullCalendarEventDto;
+use Sabre\VObject\Component\VEvent;
 use Sabre\VObject\Node;
+use Symfony\Component\String\Slugger\SluggerInterface;
 
 class EventMapper
 {
-    /**
-     * Convert "Contao-Event-Array" to json representation for fullcalendar
-     * @param array
-     * @param \CalendarModel
-     * @return object
-     */
-    public static function convert(array $event)
+    private static ?ContaoFramework $framework = null;
+    private static ?SluggerInterface $slugger = null;
+
+    public function __construct(ContaoFramework $framework, SluggerInterface $slugger)
     {
-        $arrCSS = array_map('trim', explode(' ', $event['class']));
-        $arrCSS[] = 'jsonEvent';
-        $newEvent = new \stdClass();
-        $newEvent->id = $event['id'];
-        $newEvent->pid = $event['pid'];
+        self::$framework = $framework;
+        self::$slugger = $slugger;
+    }
+
+    /**
+     * Convert "Contao-Event-Array" to a DTO for fullcalendar.
+     */
+    public static function convert(array $event): FullCalendarEventDto
+    {
+        $cssClasses = array_map('trim', explode(' ', $event['class']));
+        $cssClasses[] = 'jsonEvent';
+
+        $newEvent = new FullCalendarEventDto();
+        $newEvent->id = (int) $event['id'];
+        $newEvent->pid = (int) $event['pid'];
         $newEvent->alias = $event['alias'];
-
-        $newEvent->title = StringUtil::decodeEntities($event['title']);
+        $newEvent->title = html_entity_decode((string) $event['title']);
         $newEvent->details = (array_key_exists("details", $event) && is_string($event['details'])) ? strip_tags($event['details']) : null;
-
         $newEvent->author = $event['author'];
         $newEvent->teaser = $event['teaser'];
         $newEvent->location = $event['location'];
         $newEvent->href = $event['href'];
 
-        $dateBegin = \Date::parse('Y-m-d', $event['begin']);
-        $dateEnd = \Date::parse('Y-m-d', $event['end']);
+        $begin = (int) $event['begin'];
+        $end = (int) $event['end'];
 
-        $timeBegin = \Date::parse('H:i', $event['begin']);
-        $timeEnd = \Date::parse('H:i', $event['end']);
+        $dateBegin = date('Y-m-d', $begin);
+        $dateEnd = date('Y-m-d', $end);
+        $timeBegin = date('H:i', $begin);
+        $timeEnd = date('H:i', $end);
 
         if ($event['fullcal_cat']) {
-            $arrCSS[] = 'cat_' . standardize($event['fullcal_cat']);
+            $cssClasses[] = 'cat_' . self::$slugger->slug((string) $event['fullcal_cat'])->lower();
         }
 
         if ($event['addTime'] === '') {
-            // Ohne Zeitangaben
+            // No time
             $newEvent->start = $dateBegin;
-            // Ein oder mehrere Tage?
             if ($dateBegin !== $dateEnd) {
-                // Es muss 1 Tag hinzugefügt werden
-                $newEvent->end = \Date::parse('Y-m-d', strtotime('+1 day', $event['end']));
-                $arrCSS[] = 'days';
+                // Add one day for fullcalendar
+                $newEvent->end = date('Y-m-d', strtotime('+1 day', $end));
+                $cssClasses[] = 'days';
             } else {
-                $arrCSS[] = 'oneDay';
+                $cssClasses[] = 'oneDay';
             }
-        } elseif ($event['begin'] === $event['end']) {
-            // Ein Event mit Startzeit ohne Endzeit
-            $newEvent->start = \Date::parse('c', $event['begin']);
-            $arrCSS[] = 'oneDayTime';
+        } elseif ($begin === $end) {
+            // Event with start time but no end time
+            $newEvent->start = date('c', $begin);
+            $cssClasses[] = 'oneDayTime';
         } elseif ($timeBegin === $timeEnd) {
-            // Nur eine Startzeit
-            $newEvent->start = \Date::parse('c', $event['begin']);
+            // Only a start time
+            $newEvent->start = date('c', $begin);
             $newEvent->end = $dateEnd;
-            $arrCSS[] = 'daysStart';
+            $cssClasses[] = 'daysStart';
         } else {
-            // Mehrere Tage mit Start- und Endzeit
-            $newEvent->start = \Date::parse('c', $event['begin']);
-            $newEvent->end = \Date::parse('c', $event['end']);
-            $arrCSS[] = 'daysTime';
+            // Multiple days with start and end time
+            $newEvent->start = date('c', $begin);
+            $newEvent->end = date('c', $end);
+            $cssClasses[] = 'daysTime';
         }
 
-        $tmpl = new \FrontendTemplate("fullcal_description");
-        foreach ($event as $k => $v) {
-            $tmpl->$k = $v;
-        }
+        /** @var Template $template */
+        $template = self::$framework->createInstance(Template::class, ['fullcal_description']);
+        $template->setData($event);
 
-        $newEvent->description = $tmpl->parse();
-        $newEvent->className = implode(' ', $arrCSS);
+        $newEvent->description = $template->parse();
+        $newEvent->className = implode(' ', $cssClasses);
 
         return $newEvent;
     }
 
     /**
-     * Get CalendarEventsModel from VEvent
-     * @param \Sabre\VObject\Node $vevent
-     * @param \Model $calObj
-     * @return \CalendarEventsModel
+     * Get CalendarEventsModel from VEvent.
      */
-    public static function getCalendarEventsModel(Node $vevent, \Model $calObj, \DateTimeZone $objTimezone)
+    public static function getCalendarEventsModel(Node $vevent, \Contao\Model $calObj, \DateTimeZone $objTimezone): CalendarEventsModel
     {
         $eData = static::serializeVevent($vevent);
         $objTimestamp = $vevent->DTSTAMP->getDateTime();
@@ -112,7 +103,7 @@ class EventMapper
         $objEndDate->setTimezone($objTimezone);
         $objTimestamp->setTimezone($objTimezone);
 
-        // Nur wenn Start UND ENDE eine Zeitangabe enthalten ist der Termin mit Zeitangabe!
+        // Only if start AND end have a time, the event has a time
         $addTime = ($vevent->DTSTART->hasTime() && $vevent->DTEND->hasTime());
 
         $eventId = $eData['uid'] . '_' . $objStartDate->getTimestamp();
@@ -127,12 +118,12 @@ class EventMapper
         }
 
         $eventObject->fullcal_id = $eventId;
-        $eventObject->fullcal_uid = isset($eData['uid']) ? $eData['uid'] : '';
-        $eventObject->fullcal_desc = isset($eData['description']) ? $eData['description'] : '';
-        $eventObject->fullcal_cat = isset($eData['categories']) ? $eData['categories'] : '';
-        $eventObject->teaser = isset($eData['description']) ? $eData['description'] : '';
-        $eventObject->title = isset($eData['summary']) ? $eData['summary'] : '';
-        $eventObject->location = isset($eData['location']) ? $eData['location'] : '';
+        $eventObject->fullcal_uid = $eData['uid'] ?? '';
+        $eventObject->fullcal_desc = $eData['description'] ?? '';
+        $eventObject->fullcal_cat = $eData['categories'] ?? '';
+        $eventObject->teaser = $eData['description'] ?? '';
+        $eventObject->title = $eData['summary'] ?? '';
+        $eventObject->location = $eData['location'] ?? '';
         $eventObject->pid = $calObj->id;
         $eventObject->source = 'default';
         $eventObject->published = '1';
@@ -140,7 +131,6 @@ class EventMapper
         $eventObject->tstamp = $objTimestamp->getTimestamp();
         $eventObject->startDate = $objStartDate->getTimestamp();
         $eventObject->endDate = $objEndDate->getTimestamp();
-
         $eventObject->startTime = $objStartDate->getTimestamp();
         $eventObject->endTime = $objEndDate->getTimestamp();
 
@@ -150,7 +140,7 @@ class EventMapper
 
         if (!$addTime) {
             // Remove time info
-            $eventObject->startDate = strtotime(date("Y-m-d", $eventObject->startDate));
+            $eventObject->startDate = strtotime(date("Y-m-d", (int)$eventObject->startDate));
             $eventObject->startTime = $eventObject->startDate;
 
             $objIntervalOneDay = new \DateInterval('P1D');
@@ -160,8 +150,7 @@ class EventMapper
                 $eventObject->endDate = null;
                 $eventObject->endTime = $eventObject->startDate;
             } else {
-                // Bei mehrtägigen Terminen ohne Zeitangabe muss
-                // der letzte Tag subtrahiert werden.
+                // For multi-day events without time, the last day must be subtracted.
                 $objEndDateSubbed = $objEndDate->sub($objIntervalOneDay);
                 $eventObject->endDate = $objEndDateSubbed->getTimestamp();
                 $eventObject->endTime = $objEndDateSubbed->getTimestamp();
@@ -171,7 +160,7 @@ class EventMapper
         $eventObject->save();
 
         // After first save() because the id is necessary for alias generation
-        static::generateAlias($eventObject);
+        self::generateAlias($eventObject);
 
         // Save the single event as ics files
         static::saveEventAsIcs($eventObject, $vevent);
@@ -180,11 +169,10 @@ class EventMapper
         return $eventObject;
     }
 
-    /* Get a flat array with the event infos
-     * @param \Sabre\VObject\Component\VEvent
-     * @return array
+    /**
+     * Get a flat array with the event infos.
      */
-    public static function serializeVevent(Node $vevent)
+    public static function serializeVevent(Node $vevent): array
     {
         $values = [];
         $jsonObj = $vevent->jsonSerialize();
@@ -197,6 +185,28 @@ class EventMapper
         }
         return $values;
     }
+
+    private static function generateAlias(CalendarEventsModel $eventModel): void
+    {
+        $alias = self::$slugger->slug($eventModel->title)->lower();
+        $eventModel->alias = $alias;
+        $eventModel->save();
+    }
+
+    private static function saveEventAsIcs(CalendarEventsModel $eventModel, VEvent $vevent): void
+    {
+        $vcalendar = new VCalendar();
+        $vcalendar->add($vevent);
+
+        $fs = self::$framework->getAdapter(Dbafs::class);
+        $folderPath = CalendarSyncService::ICS_FOLDER_PATH . '/' . $eventModel->getRelated('pid')->fullcal_alias;
+        if (!$fs->has($folderPath)) {
+            $fs->createFolder($folderPath);
+        }
+        $filePath = $folderPath . '/' . $eventModel->alias . '.ics';
+        $fs->write($filePath, $vcalendar->serialize());
+    }
+}
 
     /**
      * Save one event in an ics file

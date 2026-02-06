@@ -1,0 +1,10 @@
+<table class="fullcalView">
+    <tbody>
+    <?php foreach ($this->rows as $key => $value): ?>
+        <tr>
+            <td class="key"><?= $key ?></td>
+            <td class="value"><?= $value ?></td>
+        </tr>
+    <?php endforeach; ?>
+    </tbody>
+</table>
