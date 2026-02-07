@@ -1,6 +1,7 @@
 {
     "name": "martin-kozianka/contao-fullcalendar",
     "description": "FullCalendar, http://fullcalendar.io for Contao",
+    "version": "1.0.0",
     "keywords": [
         "contao",
         "calendar",
